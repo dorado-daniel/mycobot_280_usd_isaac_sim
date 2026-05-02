@@ -216,3 +216,32 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Isaac Sim / Omniverse Kit caches & runtime
+*.log.*
+kit-cache/
+shadercache/
+*.crash
+*.dmp
+.thumbs/
+*.usd~
+*.usda~
+*.usdc~
+*.usd.lock
+
+# IDEs / editors (extra)
+.idea/
+*.swp
+*.swo
+*~
+.cursor/
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+.AppleDouble
+.LSOverride

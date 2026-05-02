@@ -1,0 +1,18 @@
+[package]
+version = "0.1.0"
+title = "MyCobot Control"
+description = "Minimal read-only control window for the MyCobot 280 M5 USD rig."
+authors = ["You"]
+category = "Robotics"
+keywords = ["mycobot", "robotics", "isaac"]
+readme = "docs/README.md"
+repository = ""
+changelog = ""
+
+[dependencies]
+"omni.kit.uiapp" = {}
+"omni.usd" = {}
+"omni.ui" = {}
+
+[[python.module]]
+name = "mycobot_control"
