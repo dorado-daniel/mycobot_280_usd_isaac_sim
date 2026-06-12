@@ -1,91 +1,134 @@
 # mycobot_280_usd_isaac_sim
 
-USD asset and Isaac Sim Kit extension for the **MyCobot 280 M5** robot arm.
+Self-contained **USD** assets and a **Kit extension** for the Elephant Robotics **MyCobot 280 M5** in NVIDIA Isaac Sim.
 
-This repository contains:
+Both USD files are flattened: geometry, materials, and physics are baked in. No external mesh files are required after clone.
 
-- `mycobot_280_m5.usd` — flattened, self-contained USD rig of the
-  MyCobot 280 M5 (imported from URDF, with the `physics_joints` scope
-  used for control and the legacy URDF `joints` scope kept deactivated).
-  Meshes and materials are baked into the file, so the asset works
-  standalone after cloning.
-- `mycobot_control/` and `config/` — the **MyCobot Control** Kit
-  extension, a small read-only control and validation window for the
-  rig.
+## Contents
 
-## Repository layout
+| Path | Description |
+|---|---|
+| `mycobot_280_m5.usd` | 6-DOF arm only |
+| `mycobot_280_m5_gripper.usd` | Arm + adaptive gripper |
+| `config/` + `mycobot_control/` | **MyCobot Control** Kit extension |
 
 ```
 .
-├── config/
-│   └── extension.toml              # Kit extension manifest
+├── config/extension.toml
+├── docs/README.md
 ├── mycobot_control/
-│   ├── __init__.py
-│   ├── extension.py                # Extension entry point
-│   ├── logger.py                   # Centralized logging (carb + UI panel)
-│   ├── robot.py                    # USD inspection / validation helpers
-│   └── ui.py                       # MyCobot Control window + log panel
-└── mycobot_280_m5.usd              # Robot USD asset (flattened)
+├── mycobot_280_m5.usd
+└── mycobot_280_m5_gripper.usd
 ```
 
-## Installing the extension in Isaac Sim
+## Physics model
 
-1. Open Isaac Sim.
-2. Go to **Window → Extensions**.
-3. Click the gear icon and add the **parent** folder of this repository
-   to the *Extension Search Paths*. For example, if the repo is cloned
-   to `C:\dev\mycobot_280_usd_isaac_sim`, add `C:\dev` (Kit looks for
-   extensions one level below each search path).
-4. Search for **MyCobot Control** in the Extensions list and enable it.
-   Tick *Autoload* if you want it to start with Isaac Sim.
+Both assets share the same articulation root: `/World/mycobot_280_m5`.
 
-After enabling the extension you should see a new window titled
-**MyCobot Control**.
+| Property | Value |
+|---|---|
+| Articulation root | `/World/mycobot_280_m5` |
+| Controlled joints | `/World/mycobot_280_m5/physics_joints/*` |
+| Legacy URDF scope | `/World/mycobot_280_m5/joints` — must stay **deactivated** |
+| Joint limits | **degrees** (Isaac Sim convention for this asset) |
+| Collision | `convexHull` on all dynamic link meshes |
+| Self-collisions | **disabled** on the articulation root (gripper convex hulls overlap at rest) |
 
-## Loading the robot
+Each revolute joint uses **PhysX angular DriveAPI** (`type=force`, stiffness/damping/maxForce, `targetPosition` in degrees).
 
-1. In Isaac Sim, **File → Open** and choose `mycobot_280_m5.usd` (or
-   drag-and-drop it into the Stage).
-2. The default robot root path expected by the extension is
-   `/World/mycobot_280_m5`. If your stage uses a different prim path,
-   open `mycobot_control/robot.py` and adjust the `robot_root_path`
-   default, or instantiate `MyCobotRobot(robot_root_path=...)` with the
-   right path.
+### Arm joints (6 DOF)
 
-## Using the MyCobot Control window
+| Joint | Lower | Upper |
+|---|---:|---:|
+| `joint2_to_joint1` | −168.0° | 168.0° |
+| `joint3_to_joint2` | −140.0° | 140.0° |
+| `joint4_to_joint3` | −150.0° | 150.0° |
+| `joint5_to_joint4` | −150.0° | 150.0° |
+| `joint6_to_joint5` | −155.0° | 160.0° |
+| `joint6output_to_joint6` | −180.0° | 180.0° |
 
-The window exposes two buttons and an embedded log panel:
+Control: set **Drive → Angular → Target Position** (degrees) on the joint prim under `physics_joints`, with simulation **Play** running.
 
-- **Validate Robot** — checks that:
-  - a USD stage is open,
-  - the robot root prim exists,
-  - the `physics_joints` scope and joint prims exist,
-  - every revolute joint has an `angular` `DriveAPI` applied,
-  - the legacy URDF `joints` scope is **deactivated** (this scope is
-    created by the URDF importer and cannot be deleted, only
-    deactivated).
-- **Print Joints** — lists every joint prim under
-  `/World/mycobot_280_m5/physics_joints` with its USD type.
+## Gripper (1 DOF + mimic)
 
-All output appears in the **Log** area inside the window (color-coded by
-severity: gray = info, blue = warn, red = error). Messages are also
-forwarded to the Isaac Sim Console window and to stdout (terminal).
+The adaptive gripper has **one actuated joint** and **five coupled finger joints**, matching the real hardware / URDF mimic chain.
+
+| Joint | Role | Limits (deg) | Mimic of `gripper_controller` |
+|---|---|---:|---|
+| `gripper_controller` | **Actuated** (master) | −42.4 … +8.6 | — |
+| `gripper_base_to_gripper_left2` | Finger | −45.8 … +28.6 | × +1 |
+| `gripper_left3_to_gripper_left1` | Finger | −28.6 … +28.6 | × −1 |
+| `gripper_base_to_gripper_right3` | Finger | −28.6 … +40.1 | × −1 |
+| `gripper_base_to_gripper_right2` | Finger | −28.6 … +45.8 | × −1 |
+| `gripper_right3_to_gripper_right1` | Finger | −28.6 … +28.6 | × +1 |
+
+Finger coupling is stored as **`newton:mimicJoint`** on each slave joint (reference → `gripper_controller`, coef0/coef1 = offset / multiplier).
+
+### Mimic is required for correct gripper motion
+
+> **Important:** Under the default **PhysX** backend, `newton:mimicJoint` is **not enforced**. Moving only `gripper_controller → targetPosition` moves a single finger link; the rest will not follow.
+
+Use one of these approaches:
+
+1. **Newton backend (native mimic)** — launch Isaac Sim with Newton so mimic joints are solved automatically:
+   ```bash
+   ./isaac-sim.newton.sh
+   ```
+   Then control only `gripper_controller` (Target Position in degrees, range −42.4 … +8.6).
+
+2. **MyCobot Control extension (PhysX)** — sets coordinated drive targets on all six gripper joints from one UI slider / Open / Close buttons.
+
+3. **Custom code / RL env (PhysX or Newton)** — expose **one gripper action** and propagate targets:
+   ```python
+   # theta = gripper_controller angle in degrees
+   set_target("gripper_controller", theta)
+   set_target("gripper_base_to_gripper_left2", +theta)
+   set_target("gripper_left3_to_gripper_left1", -theta)
+   set_target("gripper_base_to_gripper_right3", -theta)
+   set_target("gripper_base_to_gripper_right2", -theta)
+   set_target("gripper_right3_to_gripper_right1", +theta)
+   ```
+
+Suggested mapping: **closed ≈ −42.4°**, **neutral = 0°**, **open ≈ +8.6°** (some finger joints hit their own limits before the controller limit).
+
+For RL, treat the gripper as **one action dimension** (6 arm + 1 gripper). Mimic propagation belongs in the env step, unless you run Newton.
+
+## Install the extension
+
+**Option A — symlink into Isaac’s user extensions folder** (recommended):
+
+```bash
+ln -sfn /path/to/mycobot_280_usd_isaac_sim \
+  ~/apps/isaacsim-6.0.0/extsUser/mycobot.control
+```
+
+**Option B — Extension Search Path:** in **Window → Extensions → gear**, add the **parent** directory of this repo.
+
+Then enable **MyCobot Control** and optionally **Autoload**.
+
+## Usage
+
+1. **File → Open** → `mycobot_280_m5_gripper.usd` (or arm-only USD).
+2. Press **Play**.
+3. Open **MyCobot Control** (extension window).
+
+Extension default robot path: `/World/mycobot_280_m5`. Override in code via `MyCobotRobot(robot_root_path=...)`.
+
+### Extension UI
+
+| Control | Action |
+|---|---|
+| **Validate Robot** | Checks stage, `physics_joints`, DriveAPI on revolute joints, legacy `joints` scope deactivated, gripper limits |
+| **Print Joints** | Lists joints under `physics_joints` |
+| **Open / Close / Neutral** | Sets coordinated gripper targets (PhysX-safe) |
+| **Slider** | 0 = closed limit, 1 = open limit |
 
 ## Logging
 
-The extension uses a small reusable logger in `mycobot_control/logger.py`:
-
 ```python
 from mycobot_control.logger import get_logger
-
 log = get_logger("my_component")
 log.info("hello")
-log.warn("careful")
-log.error("nope")
 ```
 
-Every call fans out to:
-
-- `carb.log_*` (Isaac Sim Console / log file),
-- `print(..., flush=True)` (terminal),
-- registered subscribers (the in-window log panel uses this).
+Output goes to the in-window log panel, Isaac Console (`carb`), and stdout.

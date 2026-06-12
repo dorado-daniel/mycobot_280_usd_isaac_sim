@@ -106,6 +106,19 @@ class MyCobotControlWindow(ui.Window):
             with ui.HStack(spacing=8, height=0):
                 ui.Button("Validate Robot", clicked_fn=self._on_validate)
                 ui.Button("Print Joints", clicked_fn=self._on_print_joints)
+
+            ui.Spacer(height=4)
+            ui.Label("Gripper", height=0)
+            with ui.HStack(spacing=8, height=0):
+                ui.Button("Open", clicked_fn=self._on_open)
+                ui.Button("Close", clicked_fn=self._on_close)
+                ui.Button("Neutral", clicked_fn=self._on_neutral)
+            with ui.HStack(spacing=8, height=0):
+                ui.Label("Closed", width=50)
+                self._grip_slider = ui.FloatSlider(min=0.0, max=1.0)
+                self._grip_slider.model.add_value_changed_fn(self._on_slider)
+                ui.Label("Open", width=40)
+
             self._log_panel.build()
 
     def _on_validate(self):
@@ -122,6 +135,34 @@ class MyCobotControlWindow(ui.Window):
             self._robot.list_joints()
         except Exception as exc:
             _log.error(f"list_joints() raised: {exc!r}")
+            raise
+
+    def _on_open(self):
+        try:
+            self._robot.open_gripper()
+        except Exception as exc:
+            _log.error(f"open_gripper() raised: {exc!r}")
+            raise
+
+    def _on_close(self):
+        try:
+            self._robot.close_gripper()
+        except Exception as exc:
+            _log.error(f"close_gripper() raised: {exc!r}")
+            raise
+
+    def _on_neutral(self):
+        try:
+            self._robot.set_gripper_target(0.0)
+        except Exception as exc:
+            _log.error(f"set_gripper_target() raised: {exc!r}")
+            raise
+
+    def _on_slider(self, model):
+        try:
+            self._robot.set_gripper_fraction(model.get_value_as_float())
+        except Exception as exc:
+            _log.error(f"set_gripper_fraction() raised: {exc!r}")
             raise
 
     def destroy(self):
